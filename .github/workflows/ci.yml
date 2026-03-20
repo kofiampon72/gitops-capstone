@@ -1,0 +1,126 @@
+name: CI Pipeline 
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+  pull_request:
+    types: [opened, closed]
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Lint Code
+        run: |
+          flake8 app.py test_app.py
+
+      - name: Run Tests
+        run: |
+          pytest test_app.py -v
+
+
+  # -------------------------
+  # 2. MOVE TO IN PROGRESS (on push)
+  # -------------------------
+  move-to-progress:
+    needs: build
+    if: github.event_name == 'push' && success()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract Trello ID from branch
+        id: extract
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          ID=$(echo "$BRANCH" | grep -o 'TRELLO-[0-9]*' || true)
+
+          if [ -z "$ID" ]; then
+            echo "No Trello ID found in branch, skipping..."
+            exit 0
+          fi
+
+          echo "id=$ID" >> $GITHUB_OUTPUT
+
+      - name: Find Trello Card
+        if: steps.extract.outputs.id != ''
+        id: find
+        run: |
+          RESPONSE=$(curl -s "https://api.trello.com/1/search?query=${{ steps.extract.outputs.id }}&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}")
+          CARD_ID=$(echo $RESPONSE | jq -r '.cards[0].id')
+
+          if [ "$CARD_ID" = "null" ] || [ -z "$CARD_ID" ]; then
+            echo "No matching Trello card found, skipping..."
+            exit 0
+          fi
+
+          echo "card_id=$CARD_ID" >> $GITHUB_OUTPUT
+
+      - name: Move Card to In Progress
+        if: steps.extract.outputs.id != '' && steps.find.outputs.card_id != ''
+        run: |
+          curl -X PUT "https://api.trello.com/1/cards/${{ steps.find.outputs.card_id }}?idList=${{ secrets.INPROGRESS_LIST_ID }}&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}"
+
+  # -------------------------
+  # 3. MOVE TO REVIEW / DONE
+  # -------------------------
+  trello:
+    needs: build 
+    if: github.event_name == 'pull_request' && success()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract Trello ID from branch
+        id: extract
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          ID=$(echo "$BRANCH" | grep -o 'TRELLO-[0-9]*' || true)
+
+          if [ -z "$ID" ]; then
+            echo "No Trello ID found in branch, skipping..."
+            exit 0
+          fi
+
+          echo "id=$ID" >> $GITHUB_OUTPUT
+
+      - name: Find Trello Card
+        if: steps.extract.outputs.id != ''
+        id: find
+        run: |
+          RESPONSE=$(curl -s "https://api.trello.com/1/search?query=${{ steps.extract.outputs.id }}&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}")
+          CARD_ID=$(echo $RESPONSE | jq -r '.cards[0].id')
+
+          if [ "$CARD_ID" = "null" ] || [ -z "$CARD_ID" ]; then
+            echo "No matching Trello card found, skipping..."
+            exit 0
+          fi
+
+          echo "card_id=$CARD_ID" >> $GITHUB_OUTPUT
+
+      - name: Move Card (Review or Done)
+        if: steps.extract.outputs.id != '' && steps.find.outputs.card_id != ''
+        run: |
+          if [[ "${{ github.event.action }}" == "opened" ]]; then
+            LIST_ID="${{ secrets.REVIEW_LIST_ID }}"
+          elif [[ "${{ github.event.action }}" == "closed" && "${{ github.event.pull_request.merged }}" == "true" ]]; then
+            LIST_ID="${{ secrets.DONE_LIST_ID }}"
+          else
+            exit 0
+          fi
+
+          curl -X PUT "https://api.trello.com/1/cards/${{ steps.find.outputs.card_id }}?idList=$LIST_ID&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}"
