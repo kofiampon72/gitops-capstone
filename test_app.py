@@ -41,3 +41,5 @@ def test_reverse_empty_string(client):
 def test_reverse_single_char(client):
     res = client.post('/reverse-string', json={"text": "a"})
     assert res.get_json()["result"] == "a"
+
+x=1
