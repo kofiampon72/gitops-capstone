@@ -46,3 +46,5 @@ def test_reverse_single_char(client):
 def test_sum_missing_keys(client):
     res = client.post('/sum', json={})
     assert res.get_json()["result"] == 0
+
+x=1
