@@ -180,7 +180,7 @@ Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) befo
 
 ## Author
 
-**Konadu Kofi Amponsah**
+**Konadu Kofi Amponsah** \
 Junior DevOps / Cloud Engineer | AWS Certified Cloud Practitioner
 [GitHub](https://github.com/kofiampon72) · [Email](mailto:konadukofi88@gmail.com)
 
