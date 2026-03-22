@@ -1,6 +1,6 @@
 # GitOps Capstone Project
 
-A GitOps-driven CI/CD capstone project built as part of the **AmaliTech AWS re/Start Program**. This project demonstrates real-world GitOps practices using a Python Flask REST API, automated testing with pytest, code quality enforcement with flake8, and a fully automated CI pipeline powered by GitHub Actions.
+A GitOps-driven CI/CD capstone project. This project demonstrates real-world GitOps practices using a Python Flask REST API, automated testing with pytest, code quality enforcement with flake8, and a fully automated CI pipeline powered by GitHub Actions.
 
 ---
 
@@ -136,8 +136,6 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The app will be available at `http://localhost:5000`.
-
 ---
 
 ## Running Tests
@@ -184,5 +182,5 @@ Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) befo
 
 **Konadu Kofi Amponsah**
 Junior DevOps / Cloud Engineer | AWS Certified Cloud Practitioner
-[GitHub](https://github.com/kofiampon72) · [Email](mailto:kofiamponsahkonadu@gmail.com)
+[GitHub](https://github.com/kofiampon72) · [Email](mailto:konadukofi88@gmail.com)
 
