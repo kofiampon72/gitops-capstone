@@ -1,4 +1,5 @@
-name: CI Pipeline 
+name: CI Pipeline
+
 on:
   push:
     branches:
@@ -10,9 +11,11 @@ on:
       - main
 
 jobs:
+  # -------------------------
+  # 1. BUILD
+  # -------------------------
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -23,38 +26,32 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Lint Code
-        run: |
-          flake8 app.py test_app.py
+        run: flake8 app.py test_app.py
 
       - name: Run Tests
-        run: |
-          pytest test_app.py -v
-
+        run: pytest test_app.py -v
 
   # -------------------------
-  # 2. MOVE TO IN PROGRESS (on push)
+  # 2. MOVE TO IN PROGRESS
+  #    Triggered only on push to feature/**
   # -------------------------
-  move-to-progress:
+  move-to-in-progress:
     needs: build
-    if: github.event_name == 'push' && success()
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/')
     runs-on: ubuntu-latest
-
     steps:
       - name: Extract Trello ID from branch
         id: extract
         run: |
           BRANCH="${{ github.ref_name }}"
-          ID=$(echo "$BRANCH" | grep -o 'TRELLO-[0-9]*' || true)
-
+          ID=$(echo "$BRANCH" | grep -oP 'TRELLO-[0-9]+' || true)
           if [ -z "$ID" ]; then
-            echo "No Trello ID found in branch, skipping..."
+            echo "No Trello ID found in branch name, skipping..."
             exit 0
           fi
-
           echo "id=$ID" >> $GITHUB_OUTPUT
 
       - name: Find Trello Card
@@ -63,39 +60,38 @@ jobs:
         run: |
           RESPONSE=$(curl -s "https://api.trello.com/1/search?query=${{ steps.extract.outputs.id }}&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}")
           CARD_ID=$(echo $RESPONSE | jq -r '.cards[0].id')
-
           if [ "$CARD_ID" = "null" ] || [ -z "$CARD_ID" ]; then
             echo "No matching Trello card found, skipping..."
             exit 0
           fi
-
           echo "card_id=$CARD_ID" >> $GITHUB_OUTPUT
 
       - name: Move Card to In Progress
         if: steps.extract.outputs.id != '' && steps.find.outputs.card_id != ''
         run: |
-          curl -X PUT "https://api.trello.com/1/cards/${{ steps.find.outputs.card_id }}?idList=${{ secrets.INPROGRESS_LIST_ID }}&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}"
+          curl -s -X PUT "https://api.trello.com/1/cards/${{ steps.find.outputs.card_id }}" \
+            -d "idList=${{ secrets.INPROGRESS_LIST_ID }}" \
+            -d "key=${{ secrets.TRELLO_KEY }}" \
+            -d "token=${{ secrets.TRELLO_TOKEN }}"
 
   # -------------------------
-  # 3. MOVE TO REVIEW / DONE
+  # 3. MOVE TO IN REVIEW
+  #    Triggered only when a PR is opened
   # -------------------------
-  trello:
-    needs: build 
-    if: github.event_name == 'pull_request' && success()
+  move-to-review:
+    needs: build
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
     runs-on: ubuntu-latest
-
     steps:
       - name: Extract Trello ID from branch
         id: extract
         run: |
           BRANCH="${{ github.head_ref }}"
-          ID=$(echo "$BRANCH" | grep -o 'TRELLO-[0-9]*' || true)
-
+          ID=$(echo "$BRANCH" | grep -oP 'TRELLO-[0-9]+' || true)
           if [ -z "$ID" ]; then
-            echo "No Trello ID found in branch, skipping..."
+            echo "No Trello ID found in branch name, skipping..."
             exit 0
           fi
-
           echo "id=$ID" >> $GITHUB_OUTPUT
 
       - name: Find Trello Card
@@ -104,23 +100,56 @@ jobs:
         run: |
           RESPONSE=$(curl -s "https://api.trello.com/1/search?query=${{ steps.extract.outputs.id }}&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}")
           CARD_ID=$(echo $RESPONSE | jq -r '.cards[0].id')
-
           if [ "$CARD_ID" = "null" ] || [ -z "$CARD_ID" ]; then
             echo "No matching Trello card found, skipping..."
             exit 0
           fi
-
           echo "card_id=$CARD_ID" >> $GITHUB_OUTPUT
 
-      - name: Move Card (Review or Done)
+      - name: Move Card to In Review
         if: steps.extract.outputs.id != '' && steps.find.outputs.card_id != ''
         run: |
-          if [[ "${{ github.event.action }}" == "opened" ]]; then
-            LIST_ID="${{ secrets.REVIEW_LIST_ID }}"
-          elif [[ "${{ github.event.action }}" == "closed" && "${{ github.event.pull_request.merged }}" == "true" ]]; then
-            LIST_ID="${{ secrets.DONE_LIST_ID }}"
-          else
+          curl -s -X PUT "https://api.trello.com/1/cards/${{ steps.find.outputs.card_id }}" \
+            -d "idList=${{ secrets.REVIEW_LIST_ID }}" \
+            -d "key=${{ secrets.TRELLO_KEY }}" \
+            -d "token=${{ secrets.TRELLO_TOKEN }}"
+
+  # -------------------------
+  # 4. MOVE TO DONE
+  #    Triggered only when a PR is merged
+  # -------------------------
+  move-to-done:
+    needs: build
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract Trello ID from branch
+        id: extract
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          ID=$(echo "$BRANCH" | grep -oP 'TRELLO-[0-9]+' || true)
+          if [ -z "$ID" ]; then
+            echo "No Trello ID found in branch name, skipping..."
             exit 0
           fi
+          echo "id=$ID" >> $GITHUB_OUTPUT
 
-          curl -X PUT "https://api.trello.com/1/cards/${{ steps.find.outputs.card_id }}?idList=$LIST_ID&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}"
+      - name: Find Trello Card
+        if: steps.extract.outputs.id != ''
+        id: find
+        run: |
+          RESPONSE=$(curl -s "https://api.trello.com/1/search?query=${{ steps.extract.outputs.id }}&key=${{ secrets.TRELLO_KEY }}&token=${{ secrets.TRELLO_TOKEN }}")
+          CARD_ID=$(echo $RESPONSE | jq -r '.cards[0].id')
+          if [ "$CARD_ID" = "null" ] || [ -z "$CARD_ID" ]; then
+            echo "No matching Trello card found, skipping..."
+            exit 0
+          fi
+          echo "card_id=$CARD_ID" >> $GITHUB_OUTPUT
+
+      - name: Move Card to Done
+        if: steps.extract.outputs.id != '' && steps.find.outputs.card_id != ''
+        run: |
+          curl -s -X PUT "https://api.trello.com/1/cards/${{ steps.find.outputs.card_id }}" \
+            -d "idList=${{ secrets.DONE_LIST_ID }}" \
+            -d "key=${{ secrets.TRELLO_KEY }}" \
+            -d "token=${{ secrets.TRELLO_TOKEN }}"
