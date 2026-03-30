@@ -48,3 +48,4 @@ def test_sum_missing_keys(client):
     assert res.get_json()["result"] == 0
 
 x=1
+x=2
